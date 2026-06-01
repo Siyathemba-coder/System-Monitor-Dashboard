@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>SysMon - System Monitor</title>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     :root {
       --bg:        #090e1a;
@@ -193,6 +194,36 @@
     /* Timestamp */
     #timestamp { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 
+    /* CPU History chart */
+    .history-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 16px;
+      transition: border-color 0.3s;
+    }
+    .history-panel:hover { border-color: var(--accent); }
+    .history-panel::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.5;
+    }
+    .history-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .history-meta {
+      display: flex; gap: 20px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    }
+    .history-meta span { display: flex; align-items: center; gap: 6px; }
+    .meta-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
     /* Fade-in on load */
     .panel { animation: fadeUp 0.5s ease both; }
     .panel:nth-child(2) { animation-delay: 0.05s; }
@@ -273,6 +304,19 @@
 
   </div><!-- /grid-top -->
 
+  <!-- CPU History Graph -->
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="panel-label" style="margin-bottom:0">// CPU Usage History &nbsp;<span style="color:var(--muted);font-size:9px">— last 60 seconds</span></div>
+      <div class="history-meta">
+        <span><span class="meta-dot" style="background:var(--accent)"></span> CPU %</span>
+        <span id="cpu-avg-label">AVG: --%</span>
+        <span id="cpu-peak-label">PEAK: --%</span>
+      </div>
+    </div>
+    <canvas id="cpu-history-chart" height="80"></canvas>
+  </div>
+
   <div class="grid-bottom">
 
     <!-- Processes -->
@@ -298,7 +342,72 @@
 </div><!-- /container -->
 
 <script>
-  const ARC_LEN = 141.4;
+  const ARC_LEN   = 141.4;
+  const MAX_PTS   = 30; // 30 points × 2s = 60 seconds
+  const cpuHistory = [];
+  const timeLabels = [];
+
+  // ---------- CPU History Chart ----------
+  const histCtx = document.getElementById('cpu-history-chart').getContext('2d');
+  const cpuHistoryChart = new Chart(histCtx, {
+    type: 'line',
+    data: {
+      labels: Array(MAX_PTS).fill(''),
+      datasets: [{
+        data: Array(MAX_PTS).fill(null),
+        borderColor: '#4a90d9',
+        backgroundColor: 'rgba(74,144,217,0.12)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.4,
+        fill: true,
+      }]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ' ' + ctx.raw + '%' },
+        bodyFont: { family: 'Share Tech Mono' },
+      }},
+      scales: {
+        y: {
+          min: 0, max: 100,
+          ticks: { color: '#4a6080', font: { family: 'Share Tech Mono', size: 10 },
+                   callback: v => v + '%', stepSize: 25 },
+          grid: { color: 'rgba(26,46,74,0.6)' },
+        },
+        x: {
+          ticks: { display: false },
+          grid: { color: 'rgba(26,46,74,0.4)' },
+        }
+      }
+    }
+  });
+
+  function updateHistory(cpuPct) {
+    cpuHistory.push(cpuPct);
+    if (cpuHistory.length > MAX_PTS) cpuHistory.shift();
+
+    // Update chart data
+    const padded = [...Array(MAX_PTS - cpuHistory.length).fill(null), ...cpuHistory];
+    cpuHistoryChart.data.datasets[0].data = padded;
+    cpuHistoryChart.update('none');
+
+    // Update avg & peak labels
+    const valid = cpuHistory.filter(v => v !== null);
+    const avg  = (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(1);
+    const peak = Math.max(...valid).toFixed(1);
+    document.getElementById('cpu-avg-label').textContent  = 'AVG: '  + avg  + '%';
+    document.getElementById('cpu-peak-label').textContent = 'PEAK: ' + peak + '%';
+
+    // Colour the fill based on current value
+    const color = cpuPct < 60 ? '#3dd68c' : cpuPct < 85 ? '#f5c542' : '#f05e5e';
+    cpuHistoryChart.data.datasets[0].borderColor     = color;
+    cpuHistoryChart.data.datasets[0].backgroundColor = color + '20';
+  }
+
+  // ---------- Existing helpers ----------
 
   function colorFor(pct) {
     if (pct < 60) return 'var(--green)';
@@ -339,6 +448,7 @@
       cpuEl.className = 'big-value ' + classFor(d.cpu.percent);
       document.getElementById('cpu-info').textContent =
         `${d.cpu.cores} cores  |  ${d.cpu.freq_mhz} MHz`;
+      updateHistory(d.cpu.percent);
 
       // RAM
       const ramEl = document.getElementById('ram-val');
