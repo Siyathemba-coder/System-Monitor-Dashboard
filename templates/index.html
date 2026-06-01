@@ -194,6 +194,579 @@
     /* Timestamp */
     #timestamp { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 
+    /* Alerts */
+    .alert-banner {
+      display: none;
+      align-items: center; gap: 12px;
+      background: rgba(240,94,94,0.12);
+      border: 1px solid var(--red);
+      border-radius: 8px; padding: 12px 18px;
+      margin-bottom: 16px;
+      font-family: var(--font-mono); font-size: 12px;
+      animation: fadeUp 0.3s ease;
+    }
+    .alert-banner.show { display: flex; }
+    .alert-icon { font-size: 18px; }
+    .alert-list { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .alert-item { color: var(--red); }
+    .alert-dismiss {
+      background: none; border: 1px solid var(--red); color: var(--red);
+      font-family: var(--font-mono); font-size: 10px; padding: 3px 10px;
+      border-radius: 4px; cursor: pointer; white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .alert-dismiss:hover { background: var(--red); color: #fff; }
+
+    /* CPU History chart */
+    .history-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 16px;
+      transition: border-color 0.3s;
+    }
+    .history-panel:hover { border-color: var(--accent); }
+    .history-panel::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.5;
+    }
+    .history-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .history-meta {
+      display: flex; gap: 20px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    }
+    .history-meta span { display: flex; align-items: center; gap: 6px; }
+    .meta-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+    /* Fade-in on load */
+    .panel { animation: fadeUp 0.5s ease both; }
+    .panel:nth-child(2) { animation-delay: 0.05s; }
+    .panel:nth-child(3) { animation-delay: 0.10s; }
+    .panel:nth-child(4) { animation-delay: 0.15s; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo"><span>SYS</span>MON</div>
+    <div class="status-bar">
+      <div class="live-dot"></div>
+      <span>LIVE</span>
+      <span id="timestamp">--:--:--</span>
+    </div>
+  </header>
+
+  <div class="alert-banner" id="alert-banner">
+    <span class="alert-icon">⚠️</span>
+    <div class="alert-list" id="alert-list"></div>
+    <button class="alert-dismiss" onclick="dismissAlerts()">DISMISS</button>
+  </div>
+
+  <div class="grid-top">
+
+    <!-- CPU -->
+    <div class="panel">
+      <div class="panel-label">// CPU Usage</div>
+      <div class="gauge-wrap">
+        <svg class="gauge" viewBox="0 0 100 60">
+          <path class="gauge-bg"   d="M10,55 A45,45 0 0,1 90,55"/>
+          <path class="gauge-fill" id="cpu-arc" d="M10,55 A45,45 0 0,1 90,55"
+                stroke-dasharray="141.4" stroke-dashoffset="141.4" stroke="var(--accent)"/>
+        </svg>
+        <div class="big-value" id="cpu-val">--%</div>
+      </div>
+      <div class="sub-info" id="cpu-info">-- cores &nbsp;|&nbsp; -- MHz</div>
+    </div>
+
+    <!-- RAM -->
+    <div class="panel">
+      <div class="panel-label">// Memory</div>
+      <div class="big-value" id="ram-val">--<span class="big-unit">%</span></div>
+      <div class="sub-info" id="ram-info">-- / -- GB</div>
+      <div class="bar-wrap">
+        <div class="bar-track"><div class="bar-fill" id="ram-bar" style="width:0%"></div></div>
+        <div class="bar-labels"><span>0</span><span id="ram-total">-- GB</span></div>
+      </div>
+    </div>
+
+    <!-- Disk -->
+    <div class="panel">
+      <div class="panel-label">// Disk (C:)</div>
+      <div class="big-value" id="disk-val">--<span class="big-unit">%</span></div>
+      <div class="sub-info" id="disk-info">-- / -- GB</div>
+      <div class="bar-wrap">
+        <div class="bar-track"><div class="bar-fill" id="disk-bar" style="width:0%"></div></div>
+        <div class="bar-labels"><span>0</span><span id="disk-total">-- GB</span></div>
+      </div>
+    </div>
+
+    <!-- Network -->
+    <div class="panel">
+      <div class="panel-label">// Network I/O</div>
+      <div class="net-grid">
+        <div class="net-item">
+          <div class="net-label"><span class="arrow-up">▲</span>SENT</div>
+          <div class="net-value" id="net-sent">--</div>
+          <div class="net-unit">MB</div>
+        </div>
+        <div class="net-item">
+          <div class="net-label"><span class="arrow-down">▼</span>RECV</div>
+          <div class="net-value" id="net-recv">--</div>
+          <div class="net-unit">MB</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /grid-top -->
+
+  <!-- CPU History Graph -->
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="panel-label" style="margin-bottom:0">// CPU Usage History &nbsp;<span style="color:var(--muted);font-size:9px">— last 60 seconds</span></div>
+      <div class="history-meta">
+        <span><span class="meta-dot" style="background:var(--accent)"></span> CPU %</span>
+        <span id="cpu-avg-label">AVG: --%</span>
+        <span id="cpu-peak-label">PEAK: --%</span>
+      </div>
+    </div>
+    <canvas id="cpu-history-chart" height="80"></canvas>
+  </div>
+
+  <div class="grid-bottom">
+
+    <!-- Processes -->
+    <div class="panel" style="grid-column: 1 / -1;">
+      <div class="panel-label">// Top Processes by CPU</div>
+      <table class="proc-table">
+        <thead>
+          <tr>
+            <th>PROCESS</th>
+            <th>PID</th>
+            <th>CPU %</th>
+            <th>MEM %</th>
+          </tr>
+        </thead>
+        <tbody id="proc-body">
+          <tr><td colspan="4" style="color:var(--muted);font-family:var(--font-mono);font-size:12px;padding:12px 8px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const ARC_LEN   = 141.4;
+  const MAX_PTS   = 30; // 30 points × 2s = 60 seconds
+  const cpuHistory = [];
+  const timeLabels = [];
+
+  // ---------- CPU History Chart ----------
+  const histCtx = document.getElementById('cpu-history-chart').getContext('2d');
+  const cpuHistoryChart = new Chart(histCtx, {
+    type: 'line',
+    data: {
+      labels: Array(MAX_PTS).fill(''),
+      datasets: [{
+        data: Array(MAX_PTS).fill(null),
+        borderColor: '#4a90d9',
+        backgroundColor: 'rgba(74,144,217,0.12)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.4,
+        fill: true,
+      }]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ' ' + ctx.raw + '%' },
+        bodyFont: { family: 'Share Tech Mono' },
+      }},
+      scales: {
+        y: {
+          min: 0, max: 100,
+          ticks: { color: '#4a6080', font: { family: 'Share Tech Mono', size: 10 },
+                   callback: v => v + '%', stepSize: 25 },
+          grid: { color: 'rgba(26,46,74,0.6)' },
+        },
+        x: {
+          ticks: { display: false },
+          grid: { color: 'rgba(26,46,74,0.4)' },
+        }
+      }
+    }
+  });
+
+  function updateHistory(cpuPct) {
+    cpuHistory.push(cpuPct);
+    if (cpuHistory.length > MAX_PTS) cpuHistory.shift();
+
+    // Update chart data
+    const padded = [...Array(MAX_PTS - cpuHistory.length).fill(null), ...cpuHistory];
+    cpuHistoryChart.data.datasets[0].data = padded;
+    cpuHistoryChart.update('none');
+
+    // Update avg & peak labels
+    const valid = cpuHistory.filter(v => v !== null);
+    const avg  = (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(1);
+    const peak = Math.max(...valid).toFixed(1);
+    document.getElementById('cpu-avg-label').textContent  = 'AVG: '  + avg  + '%';
+    document.getElementById('cpu-peak-label').textContent = 'PEAK: ' + peak + '%';
+
+    // Colour the fill based on current value
+    const color = cpuPct < 60 ? '#3dd68c' : cpuPct < 85 ? '#f5c542' : '#f05e5e';
+    cpuHistoryChart.data.datasets[0].borderColor     = color;
+    cpuHistoryChart.data.datasets[0].backgroundColor = color + '20';
+  }
+
+  // ---------- Alerts ----------
+  const ALERT_COOLDOWN = 60000; // 60 seconds
+  const alertCooldowns = { cpu: 0, ram: 0 };
+  const THRESHOLDS = { cpu: 85, ram: 90 };
+
+  // Request desktop notification permission on load
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+
+  function sendDesktopNotification(title, body) {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body, icon: "" });
+    }
+  }
+
+  function checkAlerts(cpuPct, ramPct) {
+    const now = Date.now();
+    const active = [];
+
+    if (cpuPct >= THRESHOLDS.cpu && now - alertCooldowns.cpu > ALERT_COOLDOWN) {
+      active.push(`HIGH CPU: ${cpuPct}% (threshold: ${THRESHOLDS.cpu}%)`);
+      alertCooldowns.cpu = now;
+      sendDesktopNotification("⚠️ SysMon - CPU Alert", `CPU usage is at ${cpuPct}%`);
+    }
+    if (ramPct >= THRESHOLDS.ram && now - alertCooldowns.ram > ALERT_COOLDOWN) {
+      active.push(`HIGH RAM: ${ramPct}% (threshold: ${THRESHOLDS.ram}%)`);
+      alertCooldowns.ram = now;
+      sendDesktopNotification("⚠️ SysMon - Memory Alert", `RAM usage is at ${ramPct}%`);
+    }
+
+    if (active.length) {
+      const banner = document.getElementById("alert-banner");
+      const list   = document.getElementById("alert-list");
+      list.innerHTML = active.map(a => `<div class="alert-item">▶ ${a}</div>`).join("");
+      banner.classList.add("show");
+    }
+  }
+
+  function dismissAlerts() {
+    document.getElementById("alert-banner").classList.remove("show");
+  }
+
+  // ---------- Existing helpers ----------
+
+  function colorFor(pct) {
+    if (pct < 60) return 'var(--green)';
+    if (pct < 85) return 'var(--yellow)';
+    return 'var(--red)';
+  }
+
+  function classFor(pct) {
+    if (pct < 60) return 'c-green';
+    if (pct < 85) return 'c-yellow';
+    return 'c-red';
+  }
+
+  function setArc(id, pct, color) {
+    const el = document.getElementById(id);
+    const offset = ARC_LEN - (pct / 100) * ARC_LEN;
+    el.style.strokeDashoffset = offset;
+    el.style.stroke = color;
+  }
+
+  function cpuBadge(cpu) {
+    const cls = cpu > 50 ? 'c-red' : cpu > 20 ? 'c-yellow' : 'c-green';
+    return `<span class="cpu-badge ${cls}">${cpu.toFixed(1)}%</span>`;
+  }
+
+  async function fetchStats() {
+    try {
+      const res = await fetch('/api/stats');
+      const d = await res.json();
+
+      document.getElementById('timestamp').textContent = d.timestamp;
+
+      // CPU
+      const cpuColor = colorFor(d.cpu.percent);
+      setArc('cpu-arc', d.cpu.percent, cpuColor);
+      const cpuEl = document.getElementById('cpu-val');
+      cpuEl.textContent = d.cpu.percent + '%';
+      cpuEl.className = 'big-value ' + classFor(d.cpu.percent);
+      document.getElementById('cpu-info').textContent =
+        `${d.cpu.cores} cores  |  ${d.cpu.freq_mhz} MHz`;
+      updateHistory(d.cpu.percent);
+
+      // RAM
+      const ramEl = document.getElementById('ram-val');
+      ramEl.innerHTML = d.ram.percent + '<span class="big-unit">%</span>';
+      ramEl.className = 'big-value ' + classFor(d.ram.percent);
+      document.getElementById('ram-info').textContent =
+        `${d.ram.used_gb} / ${d.ram.total_gb} GB`;
+      document.getElementById('ram-bar').style.width = d.ram.percent + '%';
+      document.getElementById('ram-bar').style.background =
+        `linear-gradient(90deg, ${colorFor(d.ram.percent)}, ${colorFor(d.ram.percent)}aa)`;
+      document.getElementById('ram-total').textContent = d.ram.total_gb + ' GB';
+
+      // Check alerts
+      checkAlerts(d.cpu.percent, d.ram.percent);
+
+      // Disk
+      const diskEl = document.getElementById('disk-val');
+      diskEl.innerHTML = d.disk.percent + '<span class="big-unit">%</span>';
+      diskEl.className = 'big-value ' + classFor(d.disk.percent);
+      document.getElementById('disk-info').textContent =
+        `${d.disk.used_gb} / ${d.disk.total_gb} GB`;
+      document.getElementById('disk-bar').style.width = d.disk.percent + '%';
+      document.getElementById('disk-bar').style.background =
+        `linear-gradient(90deg, ${colorFor(d.disk.percent)}, ${colorFor(d.disk.percent)}aa)`;
+      document.getElementById('disk-total').textContent = d.disk.total_gb + ' GB';
+
+      // Network
+      document.getElementById('net-sent').textContent = d.network.sent_mb;
+      document.getElementById('net-recv').textContent = d.network.recv_mb;
+
+      // Processes
+      const tbody = document.getElementById('proc-body');
+      tbody.innerHTML = d.processes.map(p => `
+        <tr>
+          <td><span class="proc-name">${p.name}</span></td>
+          <td><span class="proc-pid">${p.pid}</span></td>
+          <td>${cpuBadge(p.cpu)}</td>
+          <td style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">${p.mem.toFixed(1)}%</td>
+        </tr>
+      `).join('');
+
+    } catch (e) {
+      console.error('Failed to fetch stats:', e);
+    }
+  }
+
+  fetchStats();
+  setInterval(fetchStats, 2000);
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SysMon - System Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:        #090e1a;
+      --panel:     #0d1525;
+      --border:    #1a2e4a;
+      --accent:    #4a90d9;
+      --accent2:   #7ab8e8;
+      --green:     #3dd68c;
+      --yellow:    #f5c542;
+      --red:       #f05e5e;
+      --text:      #c8daf0;
+      --muted:     #4a6080;
+      --font-mono: 'Share Tech Mono', monospace;
+      --font-ui:   'Rajdhani', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(74,144,217,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(74,144,217,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      color: var(--accent2);
+      letter-spacing: 2px;
+    }
+    .logo span { color: var(--accent); }
+    .status-bar {
+      display: flex; align-items: center; gap: 16px;
+      font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    }
+    .live-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* Grid layout */
+    .grid-top {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .grid-bottom {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* Panel */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .panel:hover { border-color: var(--accent); }
+    .panel::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.5;
+    }
+
+    .panel-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .big-value {
+      font-family: var(--font-mono);
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
+      transition: color 0.5s;
+    }
+    .big-unit { font-size: 14px; color: var(--muted); margin-left: 2px; }
+
+    .sub-info {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      margin-top: 6px;
+    }
+
+    /* Arc gauge */
+    .gauge-wrap { display: flex; flex-direction: column; align-items: center; }
+    svg.gauge { width: 90px; height: 56px; margin-bottom: 4px; }
+    .gauge-bg   { fill: none; stroke: var(--border); stroke-width: 8; }
+    .gauge-fill { fill: none; stroke-width: 8; stroke-linecap: round;
+                  transition: stroke-dashoffset 0.8s ease, stroke 0.5s; }
+
+    /* Progress bar */
+    .bar-wrap { margin-top: 10px; }
+    .bar-track {
+      height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      transition: width 0.8s ease;
+    }
+    .bar-labels {
+      display: flex; justify-content: space-between;
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Network panel */
+    .net-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+    .net-item { text-align: center; }
+    .net-label { font-family: var(--font-mono); font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+    .net-value { font-family: var(--font-mono); font-size: 22px; color: var(--accent2); }
+    .net-unit  { font-size: 11px; color: var(--muted); }
+    .arrow-up   { color: var(--yellow); margin-right: 4px; }
+    .arrow-down { color: var(--green);  margin-right: 4px; }
+
+    /* Process table */
+    .proc-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+    .proc-table th {
+      font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 1px; text-align: left; padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .proc-table td { padding: 7px 8px; border-bottom: 1px solid rgba(26,46,74,0.5); }
+    .proc-table tr:last-child td { border-bottom: none; }
+    .proc-table tr { transition: background 0.2s; }
+    .proc-table tr:hover td { background: rgba(74,144,217,0.06); }
+    .proc-name { font-family: var(--font-mono); font-size: 12px; color: var(--accent2);
+                 max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .proc-pid  { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+    .cpu-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 3px;
+      font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    }
+
+    /* Color helpers */
+    .c-green  { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-red    { color: var(--red); }
+    .c-blue   { color: var(--accent2); }
+
+    /* Timestamp */
+    #timestamp { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+
     /* CPU History chart */
     .history-panel {
       background: var(--panel);
